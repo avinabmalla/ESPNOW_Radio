@@ -4,9 +4,19 @@
 #include <WiFi.h>
 #include <esp_wifi_internal.h>
 
-#define CHANNEL 10
-#define TEST 1
+//To switch between USB serial and the UART pins
+#define USB 1
 
+#define BAUD 115200
+#define TX 16
+#define RX 17
+
+#define CHANNEL 10
+
+//If set to 1, sends a test message every second
+#define SEND_TEST_MSG 0
+
+HardwareSerial UartSerial(2);
 struct Message
 {
 	uint8_t Payload[248];
@@ -14,6 +24,7 @@ struct Message
 	uint8_t PacketId;
 };
 
+//broadcast to everyone
 uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 uint8_t SendPacketId;
@@ -29,8 +40,13 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len)
 	memcpy(&receivedMsg, incomingData, sizeof(receivedMsg));
 	if (receivedMsg.PacketId != ReceivedPacketId)
 	{
+#if USB
 		Serial.write(receivedMsg.Payload, receivedMsg.PacketLength);
+#else
+		UartSerial.write(receivedMsg.Payload, receivedMsg.PacketLength);
+#endif
 		ReceivedPacketId = receivedMsg.PacketId;
+		digitalWrite(13, !digitalRead(13));
 	}
 }
 
@@ -64,10 +80,16 @@ void write(uint8_t *data, size_t length)
 
 void setup()
 {
-	// Init Serial Monitor
+	pinMode(13, OUTPUT);
+#if USB
 	Serial.begin(115200);
 	Serial.setTimeout(0);
 	Serial.setRxBufferSize(8192);
+#else
+	Serial1.begin(BAUD, SERIAL_8N1, TX, RX);
+	Serial1.setTimeout(0);
+	Serial.setRxBufferSize(8192);
+#endif
 
 	WiFi.disconnect();
 	WiFi.mode(WIFI_STA);
@@ -115,15 +137,20 @@ void setup()
 char testMsg[248];
 void loop()
 {
-	if (TEST)
+	if (SEND_TEST_MSG)
 	{
-		sprintf(testMsg,"Test Message ID %d\r\n", SendPacketId);
-		write((uint8_t*)testMsg,strlen(testMsg));
+		sprintf(testMsg, "Test Message ID %d\r\n", SendPacketId);
+		write((uint8_t *)testMsg, strlen(testMsg));
 		delay(1000);
 	}
 	else
 	{
-		int count = Serial.readBytes(readBuffer, 248);
+		int count;
+#if USB
+		count = Serial.readBytes(readBuffer, 248);
+#else
+		count = UartSerial.readBytes(readBuffer, 248);
+#endif
 		write(readBuffer, count);
 	}
 }
